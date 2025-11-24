@@ -50,7 +50,7 @@ type AuditTrail struct {
 
 func NewAuditTrail(cfg Config) (*AuditTrail, error) {
 	if cfg.DB == nil {
-		return nil, errors.New("audittrail: DB tidak boleh nil")
+		return nil, errors.New("audittrail: DB must not be nil")
 	}
 
 	table := cfg.TableName
@@ -58,7 +58,7 @@ func NewAuditTrail(cfg Config) (*AuditTrail, error) {
 		table = "audit_trail"
 	}
 	if !isSafeIdentifier(table) {
-		return nil, fmt.Errorf("audittrail: nama tabel tidak valid: %s", table)
+		return nil, fmt.Errorf("audittrail: invalid table name: %s", table)
 	}
 
 	placeholder := cfg.Placeholder
@@ -84,10 +84,10 @@ func NewAuditTrail(cfg Config) (*AuditTrail, error) {
 
 func (r *AuditTrail) Record(ctx context.Context, entry Entry) error {
 	if r == nil || r.db == nil {
-		return errors.New("audittrail: instance belum diinisialisasi")
+		return errors.New("audittrail: instance is not initialized")
 	}
 	if strings.TrimSpace(entry.Action) == "" {
-		return errors.New("audittrail: field Action wajib diisi")
+		return errors.New("audittrail: field Action is required")
 	}
 
 	if entry.ID == "" {
@@ -99,11 +99,11 @@ func (r *AuditTrail) Record(ctx context.Context, entry Entry) error {
 
 	requestValue, err := marshalJSONValue(entry.Request)
 	if err != nil {
-		return err
+		return fmt.Errorf("audittrail: marshal request failed: %w", err)
 	}
 	responseValue, err := marshalJSONValue(entry.Response)
 	if err != nil {
-		return err
+		return fmt.Errorf("audittrail: marshal response failed: %w", err)
 	}
 
 	placeholders := r.buildPlaceholders(10)
@@ -132,7 +132,7 @@ func (r *AuditTrail) Record(ctx context.Context, entry Entry) error {
 
 func (r *AuditTrail) EnsureTable(ctx context.Context) error {
 	if r == nil || r.db == nil {
-		return errors.New("audittrail: instance belum diinisialisasi")
+		return errors.New("audittrail: instance is not initialized")
 	}
 
 	query := fmt.Sprintf(`
@@ -191,7 +191,7 @@ func marshalJSONValue(v any) (sql.NullString, error) {
 	default:
 		buf, err := json.Marshal(v)
 		if err != nil {
-			return sql.NullString{}, fmt.Errorf("audittrail: gagal marshal JSON: %w", err)
+			return sql.NullString{}, fmt.Errorf("audittrail: marshal JSON failed: %w", err)
 		}
 		return sql.NullString{String: string(buf), Valid: true}, nil
 	}
