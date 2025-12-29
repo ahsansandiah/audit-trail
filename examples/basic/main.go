@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/ahsansandiah/audit-trail"
@@ -45,6 +46,32 @@ func (c *memoryConn) ExecContext(_ context.Context, query string, args []driver.
 	return driver.RowsAffected(1), nil
 }
 
+type memoryPubSub struct {
+	ch chan audittrail.Entry
+}
+
+func (m *memoryPubSub) Publish(ctx context.Context, entry audittrail.Entry) error {
+	select {
+	case m.ch <- entry:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
+func (m *memoryPubSub) Receive(ctx context.Context, handler func(context.Context, audittrail.Entry) error) error {
+	for {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case entry := <-m.ch:
+			if err := handler(ctx, entry); err != nil {
+				return err
+			}
+		}
+	}
+}
+
 func main() {
 	const driverName = "audittrail_memory"
 	sql.Register(driverName, &memoryDriver{})
@@ -65,21 +92,45 @@ func main() {
 		log.Fatal(err)
 	}
 
+	pubsub := &memoryPubSub{ch: make(chan audittrail.Entry, 16)}
+
+	recorder, err := audittrail.NewPubSubRecorder(pubsub, nil)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	consumer, err := audittrail.NewConsumer(audit, pubsub, nil)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	consumeCtx, cancel := context.WithCancel(context.Background())
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		if err := consumer.Run(consumeCtx); err != nil && err != context.Canceled {
+			log.Printf("consumer stopped: %v", err)
+		}
+	}()
+
 	entry := audittrail.Entry{
 		RequestID: "req-001",
 		Actor:     "user-123",
 		Action:    "create-order",
 		Endpoint:  "/api/orders",
 		Request:   map[string]any{"item_id": 42},
-		Response:  map[string]any{"status": "ok"},
 		IPAddress: "10.0.0.1",
-		CreatedAt: time.Now().UTC(),
 		CreatedBy: "service-a",
 	}
 
-	if err := audit.Record(ctx, entry); err != nil {
+	if err := recorder.Record(ctx, entry); err != nil {
 		log.Fatal(err)
 	}
+
+	time.Sleep(50 * time.Millisecond)
+	cancel()
+	wg.Wait()
 
 	log.Println("example finished")
 }

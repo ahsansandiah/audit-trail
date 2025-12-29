@@ -28,6 +28,14 @@ type Config struct {
 	Now         func() time.Time
 }
 
+type Recorder interface {
+	Record(ctx context.Context, entry Entry) error
+}
+
+type RecorderFunc func(context.Context, Entry) error
+
+func (f RecorderFunc) Record(ctx context.Context, entry Entry) error { return f(ctx, entry) }
+
 type Entry struct {
 	ID        string    `json:"id"`
 	RequestID string    `json:"request_id,omitempty"`
@@ -86,22 +94,16 @@ func (r *AuditTrail) Record(ctx context.Context, entry Entry) error {
 	if r == nil || r.db == nil {
 		return errors.New("audittrail: instance is not initialized")
 	}
-	if strings.TrimSpace(entry.Action) == "" {
-		return errors.New("audittrail: field Action is required")
+	normalized, err := normalizeEntry(entry, r.now)
+	if err != nil {
+		return err
 	}
 
-	if entry.ID == "" {
-		entry.ID = newID()
-	}
-	if entry.CreatedAt.IsZero() {
-		entry.CreatedAt = r.now().UTC()
-	}
-
-	requestValue, err := marshalJSONValue(entry.Request)
+	requestValue, err := marshalJSONValue(normalized.Request)
 	if err != nil {
 		return fmt.Errorf("audittrail: marshal request failed: %w", err)
 	}
-	responseValue, err := marshalJSONValue(entry.Response)
+	responseValue, err := marshalJSONValue(normalized.Response)
 	if err != nil {
 		return fmt.Errorf("audittrail: marshal response failed: %w", err)
 	}
@@ -116,16 +118,16 @@ func (r *AuditTrail) Record(ctx context.Context, entry Entry) error {
 	_, err = r.db.ExecContext(
 		ctx,
 		query,
-		entry.ID,
-		nullString(entry.RequestID),
-		nullString(entry.Actor),
-		entry.Action,
-		nullString(entry.Endpoint),
+		normalized.ID,
+		nullString(normalized.RequestID),
+		nullString(normalized.Actor),
+		normalized.Action,
+		nullString(normalized.Endpoint),
 		requestValue,
 		responseValue,
-		nullString(entry.IPAddress),
-		entry.CreatedAt,
-		nullString(entry.CreatedBy),
+		nullString(normalized.IPAddress),
+		normalized.CreatedAt,
+		nullString(normalized.CreatedBy),
 	)
 	return err
 }
@@ -195,6 +197,22 @@ func marshalJSONValue(v any) (sql.NullString, error) {
 		}
 		return sql.NullString{String: string(buf), Valid: true}, nil
 	}
+}
+
+func normalizeEntry(entry Entry, now func() time.Time) (Entry, error) {
+	if strings.TrimSpace(entry.Action) == "" {
+		return Entry{}, errors.New("audittrail: field Action is required")
+	}
+	if entry.ID == "" {
+		entry.ID = newID()
+	}
+	if entry.CreatedAt.IsZero() {
+		if now == nil {
+			now = time.Now
+		}
+		entry.CreatedAt = now().UTC()
+	}
+	return entry, nil
 }
 
 func nullString(s string) sql.NullString {
