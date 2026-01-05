@@ -30,8 +30,8 @@ func TestPubSubRecorderPublishesNormalizedEntry(t *testing.T) {
 	if got.ID == "" {
 		t.Fatalf("expected ID to be set")
 	}
-	if got.CreatedAt.IsZero() {
-		t.Fatalf("expected CreatedAt to be set")
+	if got.CreatedDate.IsZero() {
+		t.Fatalf("expected CreatedDate to be set")
 	}
 	if got.Action != "login" {
 		t.Fatalf("expected Action to be preserved, got %q", got.Action)

@@ -13,29 +13,29 @@ import (
 )
 
 const (
-	defaultGCPProject      = "local-project"
-	defaultPubSubTopic     = "audit-trail"
-	defaultPubSubSub       = "audit-trail-sub"
-	defaultDBDriver        = "pgx"
-	defaultDBDSN           = "postgres://user:pass@localhost:5432/audittrail?sslmode=disable"
-	defaultAuditTable      = "audit_trail"
-	envGCPProject          = "AUDIT_GCP_PROJECT"
-	envPubSubTopic         = "AUDIT_PUBSUB_TOPIC"
-	envPubSubSubscription  = "AUDIT_PUBSUB_SUBSCRIPTION"
-	envDBDriver            = "AUDIT_DB_DRIVER"
-	envDBDSN               = "AUDIT_DB_DSN"
-	envAuditTable          = "AUDIT_TABLE"
+	defaultGCPProject     = "local-project"
+	defaultPubSubTopic    = "audit-trail"
+	defaultPubSubSub      = "audit-trail-sub"
+	defaultDBDriver       = "pgx"
+	defaultDBDSN          = "postgres://user:pass@localhost:5432/audittrail?sslmode=disable"
+	defaultAuditTable     = "audit_trail"
+	envGCPProject         = "AUDIT_GCP_PROJECT"
+	envPubSubTopic        = "AUDIT_PUBSUB_TOPIC"
+	envPubSubSubscription = "AUDIT_PUBSUB_SUBSCRIPTION"
+	envDBDriver           = "AUDIT_DB_DRIVER"
+	envDBDSN              = "AUDIT_DB_DSN"
+	envAuditTable         = "AUDIT_TABLE"
 )
 
 var runtime struct {
-	mu          sync.Mutex
-	initialized bool
+	mu           sync.Mutex
+	initialized  bool
 	initializing bool
-	recorder    Recorder
-	cancel      context.CancelFunc
-	wg          sync.WaitGroup
-	db          *sql.DB
-	pubsub      *pubsub.Client
+	recorder     Recorder
+	cancel       context.CancelFunc
+	wg           sync.WaitGroup
+	db           *sql.DB
+	pubsub       *pubsub.Client
 }
 
 // InitFromEnv initializes a global recorder and consumer using GCP Pub/Sub + DB.
@@ -103,7 +103,7 @@ func InitFromEnv(ctx context.Context) error {
 		return err
 	}
 
-	runCtx, cancel := context.WithCancel(context.Background())
+	runCtx, cancel := context.WithCancel(ctx)
 	runtime.wg.Add(1)
 	go func() {
 		defer runtime.wg.Done()

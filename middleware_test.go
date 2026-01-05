@@ -58,26 +58,24 @@ func TestHTTPMiddlewareRecordsEntry(t *testing.T) {
 	}
 
 	args := calls[0].args
+	// New column order: log_aduit_trail_id, log_req_id, log_action, log_endpoint, log_request, log_response, log_created_date, log_created_by
 	if got := stringArg(args, 1); got != "req-123" {
 		t.Fatalf("request_id mismatch: %q", got)
 	}
-	if got := stringArg(args, 2); got != "user-9" {
-		t.Fatalf("actor mismatch: %q", got)
-	}
-	if got := stringArg(args, 3); got != "POST /api/orders" {
+	if got := stringArg(args, 2); got != "POST /api/orders" {
 		t.Fatalf("action mismatch: %q", got)
 	}
-	if got := stringArg(args, 4); got != "/api/orders" {
+	if got := stringArg(args, 3); got != "/api/orders" {
 		t.Fatalf("endpoint mismatch: %q", got)
 	}
-	if got := stringArg(args, 7); got != "10.0.0.8" {
-		t.Fatalf("ip mismatch: %q", got)
+	if got := args[6].Value.(time.Time); !got.Equal(fixedTime) {
+		t.Fatalf("created_date mismatch: %v", got)
 	}
-	if got := args[8].Value.(time.Time); !got.Equal(fixedTime) {
-		t.Fatalf("created_at mismatch: %v", got)
+	if got := stringArg(args, 7); got != "user-9" {
+		t.Fatalf("created_by mismatch: %q", got)
 	}
 
-	resp := stringArg(args, 6)
+	resp := stringArg(args, 5)
 	if resp != "" {
 		var decoded map[string]any
 		if err := json.Unmarshal([]byte(resp), &decoded); err != nil {

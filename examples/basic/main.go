@@ -116,12 +116,10 @@ func main() {
 
 	entry := audittrail.Entry{
 		RequestID: "req-001",
-		Actor:     "user-123",
 		Action:    "create-order",
 		Endpoint:  "/api/orders",
 		Request:   map[string]any{"item_id": 42},
-		IPAddress: "10.0.0.1",
-		CreatedBy: "service-a",
+		CreatedBy: "user-123",
 	}
 
 	if err := recorder.Record(ctx, entry); err != nil {

@@ -83,8 +83,8 @@ func TestRecordInsertsData(t *testing.T) {
 	if !strings.Contains(calls[0].query, "INSERT INTO audit_trail") {
 		t.Fatalf("unexpected query: %s", calls[0].query)
 	}
-	if len(calls[0].args) != 10 {
-		t.Fatalf("expected 10 args, got %d", len(calls[0].args))
+	if len(calls[0].args) != 8 {
+		t.Fatalf("expected 8 args, got %d", len(calls[0].args))
 	}
 }
 

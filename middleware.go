@@ -63,13 +63,13 @@ func HTTPMiddleware(recorder Recorder, opts ...HTTPMiddlewareOption) func(http.H
 			next.ServeHTTP(rec, r)
 
 			entry := Entry{
-				RequestID: headerValue(r, cfg.requestIDHeader),
-				Actor:     headerValue(r, cfg.actorHeader),
-				Action:    cfg.action(r),
-				Endpoint:  r.URL.Path,
-				Request:   cfg.requestPayload(r),
-				IPAddress: clientIP(r, cfg.ipHeader),
-				CreatedAt: start,
+				RequestID:   headerValue(r, cfg.requestIDHeader),
+				Action:      cfg.action(r),
+				Endpoint:    r.URL.Path,
+				Request:     cfg.requestPayload(r),
+				Response:    nil,
+				CreatedDate: start,
+				CreatedBy:   headerValue(r, cfg.actorHeader),
 			}
 			if cfg.responsePayload != nil {
 				entry.Response = cfg.responsePayload(rec.status)

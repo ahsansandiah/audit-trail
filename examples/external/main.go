@@ -122,7 +122,7 @@ func main() {
 	for i := 0; i < 3; i++ {
 		entry := audittrail.Entry{
 			Action:    "user-login",
-			Actor:     "user",
+			CreatedBy: "user",
 			RequestID: fmt.Sprintf("req-%03d", i),
 		}
 		if err := recorder.Record(context.Background(), entry); err != nil {
