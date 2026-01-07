@@ -39,8 +39,17 @@ var runtime struct {
 }
 
 // InitFromEnv initializes a global recorder and consumer using GCP Pub/Sub + DB.
+// Configuration is loaded from environment variables.
 // It is safe to call multiple times; only the first call will initialize.
 func InitFromEnv(ctx context.Context) error {
+	return InitFromEnvOrSecrets(ctx, nil)
+}
+
+// InitFromEnvOrSecrets initializes using environment variables with optional secret provider fallback.
+// If provider is nil, behaves like InitFromEnv (environment variables only).
+// If provider is set, tries environment variables first, then falls back to secret provider.
+// It is safe to call multiple times; only the first call will initialize.
+func InitFromEnvOrSecrets(ctx context.Context, provider SecretProvider) error {
 	runtime.mu.Lock()
 	if runtime.initialized {
 		runtime.mu.Unlock()
@@ -62,12 +71,17 @@ func InitFromEnv(ctx context.Context) error {
 		runtime.mu.Unlock()
 	}()
 
-	projectID := getenv(envGCPProject, defaultGCPProject)
-	topicName := getenv(envPubSubTopic, defaultPubSubTopic)
-	subscriptionName := getenv(envPubSubSubscription, defaultPubSubSub)
-	dbDriver := getenv(envDBDriver, defaultDBDriver)
-	dbDSN := getenv(envDBDSN, defaultDBDSN)
-	table := getenv(envAuditTable, defaultAuditTable)
+	// Helper to get config from env var or secret provider
+	getConfig := func(envKey, secretKey, defaultVal string) string {
+		return getEnvOrSecret(ctx, provider, envKey, secretKey, defaultVal)
+	}
+
+	projectID := getConfig(envGCPProject, "audit-gcp-project", defaultGCPProject)
+	topicName := getConfig(envPubSubTopic, "audit-pubsub-topic", defaultPubSubTopic)
+	subscriptionName := getConfig(envPubSubSubscription, "audit-pubsub-subscription", defaultPubSubSub)
+	dbDriver := getConfig(envDBDriver, "audit-db-driver", defaultDBDriver)
+	dbDSN := getConfig(envDBDSN, "audit-db-dsn", defaultDBDSN)
+	table := getConfig(envAuditTable, "audit-table", defaultAuditTable)
 
 	db, err := sql.Open(dbDriver, dbDSN)
 	if err != nil {
@@ -89,14 +103,14 @@ func InitFromEnv(ctx context.Context) error {
 		return err
 	}
 
-	recorder, err := NewPubSubRecorder(&gcpPublisher{topic: client.Topic(topicName)}, nil)
+	recorder, err := NewPubSubRecorder(NewGCPPublisher(client.Topic(topicName)), nil)
 	if err != nil {
 		_ = client.Close()
 		_ = db.Close()
 		return err
 	}
 
-	consumer, err := NewConsumer(audit, &gcpSubscriber{sub: client.Subscription(subscriptionName)}, nil)
+	consumer, err := NewConsumer(audit, NewGCPSubscriber(client.Subscription(subscriptionName)), nil)
 	if err != nil {
 		_ = client.Close()
 		_ = db.Close()
@@ -191,4 +205,24 @@ func getenv(key, def string) string {
 		return def
 	}
 	return val
+}
+
+// getEnvOrSecret tries to get config from environment variable first,
+// then falls back to secret provider if available
+func getEnvOrSecret(ctx context.Context, provider SecretProvider, envKey, secretKey, defaultVal string) string {
+	// 1. Try environment variable first
+	if val := strings.TrimSpace(os.Getenv(envKey)); val != "" {
+		return val
+	}
+
+	// 2. Try secret provider if available
+	if provider != nil {
+		if val, err := provider.GetSecret(ctx, secretKey); err == nil && strings.TrimSpace(val) != "" {
+			return strings.TrimSpace(val)
+		}
+		// Don't log error here to avoid noise for optional secrets
+	}
+
+	// 3. Use default
+	return defaultVal
 }

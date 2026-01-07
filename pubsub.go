@@ -6,6 +6,8 @@ import (
 	"errors"
 	"log"
 	"time"
+
+	"cloud.google.com/go/pubsub"
 )
 
 // Publisher sends an audit entry to an external queue (e.g., Pub/Sub, Kafka).
@@ -100,4 +102,61 @@ func (c *Consumer) Run(ctx context.Context) error {
 // MarshalEntryJSON is a helper for external publishers that need JSON payloads.
 func MarshalEntryJSON(entry Entry) ([]byte, error) {
 	return json.Marshal(entry)
+}
+
+// ==================== GCP Pub/Sub Implementation ====================
+
+// gcpPublisher implements Publisher interface using Google Cloud Pub/Sub.
+type gcpPublisher struct {
+	topic *pubsub.Topic
+}
+
+// NewGCPPublisher creates a Publisher implementation using GCP Pub/Sub.
+func NewGCPPublisher(topic *pubsub.Topic) Publisher {
+	return &gcpPublisher{topic: topic}
+}
+
+// Publish sends an audit entry to GCP Pub/Sub topic.
+func (p *gcpPublisher) Publish(ctx context.Context, entry Entry) error {
+	data, err := json.Marshal(entry)
+	if err != nil {
+		return err
+	}
+
+	result := p.topic.Publish(ctx, &pubsub.Message{Data: data})
+
+	// Wait for publish result synchronously to properly handle errors
+	if _, err := result.Get(ctx); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+// gcpSubscriber implements Subscriber interface using Google Cloud Pub/Sub.
+type gcpSubscriber struct {
+	sub *pubsub.Subscription
+}
+
+// NewGCPSubscriber creates a Subscriber implementation using GCP Pub/Sub.
+func NewGCPSubscriber(sub *pubsub.Subscription) Subscriber {
+	return &gcpSubscriber{sub: sub}
+}
+
+// Receive listens for messages from GCP Pub/Sub subscription.
+func (s *gcpSubscriber) Receive(ctx context.Context, handler func(context.Context, Entry) error) error {
+	return s.sub.Receive(ctx, func(ctx context.Context, msg *pubsub.Message) {
+		var entry Entry
+		if err := json.Unmarshal(msg.Data, &entry); err != nil {
+			log.Printf("audittrail: failed to unmarshal pubsub message: %v, data: %s", err, string(msg.Data))
+			msg.Nack()
+			return
+		}
+		if err := handler(ctx, entry); err != nil {
+			log.Printf("audittrail: handler failed for entry %s: %v", entry.ID, err)
+			msg.Nack()
+			return
+		}
+		msg.Ack()
+	})
 }
