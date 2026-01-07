@@ -1,16 +1,16 @@
 # Audit Trail Example Service
 
-Contoh lengkap implementasi audit trail package di service Anda.
+Complete example implementation of the audit trail package in your service.
 
 ## 📋 Prerequisites
 
 1. **Go 1.21+**
-2. **PostgreSQL** (atau database lain yang didukung)
-3. **GCP Account** dengan Pub/Sub enabled
-4. **GCP Service Account** dengan permissions:
-   - `pubsub.publisher` (untuk publish message)
-   - `pubsub.subscriber` (untuk consume message)
-   - `secretmanager.secretAccessor` (optional - jika pakai Secret Manager)
+2. **PostgreSQL** (or other supported databases)
+3. **GCP Account** with Pub/Sub enabled
+4. **GCP Service Account** with permissions:
+   - `pubsub.publisher` (to publish messages)
+   - `pubsub.subscriber` (to consume messages)
+   - `secretmanager.secretAccessor` (optional - if using Secret Manager)
 
 ---
 
@@ -23,7 +23,7 @@ go mod init your-service-name
 go get github.com/ahsansandiah/audit-trail
 go get github.com/gin-gonic/gin
 
-# Install database driver sesuai yang Anda pakai:
+# Install database driver based on what you use:
 # PostgreSQL (pgx):
 go get github.com/jackc/pgx/v5
 
@@ -37,9 +37,9 @@ go get github.com/jackc/pgx/v5
 # go get github.com/mattn/go-sqlite3
 ```
 
-**Penting:** Edit `ex_service.go` dan uncomment import driver yang sesuai:
+**Important:** Edit `ex_service.go` and uncomment the appropriate driver import:
 ```go
-// Di ex_service.go, uncomment salah satu:
+// In ex_service.go, uncomment one of these:
 _ "github.com/jackc/pgx/v5/stdlib"  // PostgreSQL (pgx)
 // _ "github.com/lib/pq"               // PostgreSQL (pq)
 // _ "github.com/go-sql-driver/mysql"  // MySQL
@@ -83,7 +83,7 @@ GRANT ALL PRIVILEGES ON DATABASE audit_db TO audit_user;
 -- Connect to database
 \c audit_db
 
--- Create table (otomatis dibuat oleh audit trail, atau manual)
+-- Create table (automatically created by audit trail, or manually)
 CREATE TABLE IF NOT EXISTS audit_trail (
     log_aduit_trail_id VARCHAR(64) PRIMARY KEY,
     log_req_id VARCHAR(128) NULL,
@@ -95,7 +95,7 @@ CREATE TABLE IF NOT EXISTS audit_trail (
     log_created_by VARCHAR(255) NULL
 );
 
--- Create index untuk query performance
+-- Create indexes for query performance
 CREATE INDEX idx_audit_created_date ON audit_trail(log_created_date);
 CREATE INDEX idx_audit_created_by ON audit_trail(log_created_by);
 CREATE INDEX idx_audit_action ON audit_trail(log_action);
@@ -107,7 +107,7 @@ CREATE INDEX idx_audit_action ON audit_trail(log_action);
 # Copy .env.example
 cp .env.example .env
 
-# Edit .env dengan nilai sebenarnya
+# Edit .env with actual values
 nano .env
 ```
 
@@ -123,13 +123,25 @@ AUDIT_TABLE=audit_trail
 GOOGLE_APPLICATION_CREDENTIALS=/path/to/service-account-key.json
 ```
 
+**Note about GCP Secret Manager:**
+
+GCP Secret Manager is **OPTIONAL** - You **DO NOT NEED** Secret Manager to use audit-trail!
+
+- ✅ **Default (Recommended)**: Use environment variables only (as shown above)
+- ⚠️ **Optional**: Use Secret Manager as fallback (for production with many microservices)
+
+If you want to use Secret Manager:
+1. Create secrets in GCP Secret Manager
+2. Uncomment code "Option B" in `ex_service.go` line 34-42
+3. Environment variables are checked first, Secret Manager is only fallback
+
 ### 5. GCP Authentication
 
 **Option A: Local Development (Service Account Key)**
 
 ```bash
-# Download service account key dari GCP Console
-# Simpan di: /path/to/service-account-key.json
+# Download service account key from GCP Console
+# Save to: /path/to/service-account-key.json
 
 # Set environment variable
 export GOOGLE_APPLICATION_CREDENTIALS=/path/to/service-account-key.json
@@ -139,7 +151,7 @@ export GOOGLE_APPLICATION_CREDENTIALS=/path/to/service-account-key.json
 
 ```yaml
 # No env var needed
-# Setup workload identity di GKE:
+# Setup workload identity in GKE:
 apiVersion: v1
 kind: ServiceAccount
 metadata:
@@ -159,10 +171,10 @@ cd examples
 ./run.sh
 ```
 
-Script ini akan:
-- ✅ Check .env file (create dari .env.example jika belum ada)
+This script will:
+- ✅ Check .env file (create from .env.example if not exists)
 - ✅ Validate required environment variables
-- ✅ Check service account key file (jika set)
+- ✅ Check service account key file (if set)
 - ✅ Display configuration
 - ✅ Run service
 
@@ -188,12 +200,12 @@ Output:
 **Quick Test (All Endpoints):**
 
 ```bash
-# Di terminal lain (service harus jalan)
+# In another terminal (service must be running)
 cd examples
 ./test_api.sh
 ```
 
-Script ini akan test semua endpoints secara otomatis dan show hasilnya.
+This script will test all endpoints automatically and show the results.
 
 **Manual Testing:**
 
@@ -385,7 +397,7 @@ ORDER BY total_actions DESC;
 
 ```go
 func handleSomething(c *gin.Context) {
-    // Set custom action name (lebih descriptive)
+    // Set custom action name (more descriptive)
     c.Set("audit_action", "APPROVE_WITHDRAWAL")
 
     // Business logic...
@@ -412,7 +424,7 @@ r.Use(audittrail.GinMiddleware(
 ```go
 r.Use(audittrail.GinMiddleware(
     audittrail.WithUserExtractor(func(c *gin.Context) string {
-        // Custom logic untuk extract user
+        // Custom logic to extract user
         if claims, exists := c.Get("jwt_claims"); exists {
             return claims.(JWTClaims).UserID
         }
@@ -476,16 +488,16 @@ r.Use(audittrail.GinMiddleware(
 
 ## 🔒 Production Checklist
 
-- [ ] Environment variables di-set dengan benar
-- [ ] GCP Pub/Sub topic dan subscription sudah dibuat
-- [ ] Database table sudah dibuat
-- [ ] Index database sudah dibuat untuk performance
-- [ ] Service account permissions sudah benar
-- [ ] Workload Identity configured (untuk GKE)
+- [ ] Environment variables are set correctly
+- [ ] GCP Pub/Sub topic and subscription are created
+- [ ] Database table is created
+- [ ] Database indexes are created for performance
+- [ ] Service account permissions are correct
+- [ ] Workload Identity configured (for GKE)
 - [ ] Monitoring setup (Pub/Sub metrics, database metrics)
 - [ ] Log retention policy configured
-- [ ] Backup strategy untuk audit logs
-- [ ] Security: Jangan audit sensitive data (password, credit card, etc)
+- [ ] Backup strategy for audit logs
+- [ ] Security: Don't audit sensitive data (passwords, credit cards, etc)
 
 ---
 
@@ -493,9 +505,9 @@ r.Use(audittrail.GinMiddleware(
 
 ### Error: "not initialized, call InitFromEnv first"
 
-**Solusi:**
+**Solution:**
 ```go
-// Pastikan InitFromEnv() dipanggil SEBELUM setup middleware
+// Make sure InitFromEnv() is called BEFORE setting up middleware
 if err := audittrail.InitFromEnv(ctx); err != nil {
     log.Fatal(err)
 }
@@ -503,34 +515,34 @@ if err := audittrail.InitFromEnv(ctx); err != nil {
 
 ### Error: "Failed to publish to pubsub"
 
-**Solusi:**
+**Solution:**
 1. Check GCP credentials: `echo $GOOGLE_APPLICATION_CREDENTIALS`
 2. Verify topic exists: `gcloud pubsub topics list`
 3. Check service account permissions
 
-### Error: "connection refused" ke database
+### Error: "connection refused" to database
 
-**Solusi:**
+**Solution:**
 1. Check database is running: `pg_isready -h localhost`
 2. Verify DSN connection string
 3. Check firewall/network rules
 
-### Consumer tidak consume message
+### Consumer not consuming messages
 
-**Solusi:**
+**Solution:**
 1. Check subscription exists: `gcloud pubsub subscriptions list`
-2. Verify subscription attached to correct topic
-3. Check consumer logs untuk error messages
+2. Verify subscription is attached to the correct topic
+3. Check consumer logs for error messages
 
 ---
 
 ## 📝 Notes
 
-- Request body capture hanya untuk `POST`, `PUT`, `PATCH`
-- Max body size default: 1MB (bisa di-adjust)
-- Audit dilakukan async (non-blocking) untuk performa
-- Error di audit trail TIDAK akan stop request handling
-- Message di-retry otomatis oleh Pub/Sub jika gagal
+- Request body capture is only for `POST`, `PUT`, `PATCH` methods
+- Default max body size: 1MB (can be adjusted)
+- Audit is performed asynchronously (non-blocking) for performance
+- Errors in audit trail will NOT stop request handling
+- Messages are automatically retried by Pub/Sub if they fail
 
 ---
 

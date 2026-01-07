@@ -24,10 +24,22 @@ import (
 func main() {
 	// 1. Initialize audit trail from environment variables
 	// Pastikan environment variables sudah di-set (lihat .env.example)
+	//
+	// Option A: Environment variables only (RECOMMENDED - tidak perlu Secret Manager)
 	ctx := context.Background()
 	if err := audittrail.InitFromEnv(ctx); err != nil {
 		log.Fatalf("Failed to initialize audit trail: %v", err)
 	}
+
+	// Option B: With GCP Secret Manager fallback (OPTIONAL)
+	// provider, err := audittrail.NewGCPSecretProvider(ctx, "your-project-id")
+	// if err != nil {
+	//     log.Fatalf("Failed to create secret provider: %v", err)
+	// }
+	// defer provider.Close()
+	// if err := audittrail.InitFromEnvOrSecrets(ctx, provider); err != nil {
+	//     log.Fatalf("Failed to initialize audit trail: %v", err)
+	// }
 	defer func() {
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
