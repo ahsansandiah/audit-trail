@@ -37,7 +37,7 @@ type RecorderFunc func(context.Context, Entry) error
 func (f RecorderFunc) Record(ctx context.Context, entry Entry) error { return f(ctx, entry) }
 
 type Entry struct {
-	ID          string    `json:"log_aduit_trail_id"`
+	ID          string    `json:"log_audit_trail_id"`
 	RequestID   string    `json:"log_req_id,omitempty"`
 	Action      string    `json:"log_action"`
 	Endpoint    string    `json:"log_endpoint,omitempty"`
@@ -108,7 +108,7 @@ func (r *AuditTrail) Record(ctx context.Context, entry Entry) error {
 
 	placeholders := r.buildPlaceholders(8)
 	query := fmt.Sprintf(
-		"INSERT INTO %s (log_aduit_trail_id, log_req_id, log_action, log_endpoint, log_request, log_response, log_created_date, log_created_by) VALUES (%s)",
+		"INSERT INTO %s (log_audit_trail_id, log_req_id, log_action, log_endpoint, log_request, log_response, log_created_date, log_created_by) VALUES (%s)",
 		r.table,
 		placeholders,
 	)
@@ -135,7 +135,7 @@ func (r *AuditTrail) EnsureTable(ctx context.Context) error {
 
 	query := fmt.Sprintf(`
 		CREATE TABLE IF NOT EXISTS %s (
-			log_aduit_trail_id VARCHAR(64) PRIMARY KEY,
+			log_audit_trail_id VARCHAR(64) PRIMARY KEY,
 			log_req_id VARCHAR(128) NULL,
 			log_action VARCHAR(255) NOT NULL,
 			log_endpoint TEXT NULL,
@@ -235,9 +235,28 @@ func detectPlaceholder(db *sql.DB) PlaceholderStyle {
 
 	driverName := strings.ToLower(fmt.Sprintf("%T", db.Driver()))
 	switch {
-	case strings.Contains(driverName, "pq"), strings.Contains(driverName, "pgx"):
+	case strings.Contains(driverName, "pq"),
+		strings.Contains(driverName, "pgx"),
+		strings.Contains(driverName, "stdlib.driver"), // pgx/v5/stdlib
+		strings.Contains(driverName, "postgres"):
 		return PlaceholderDollar
 	default:
 		return PlaceholderQuestion
+	}
+}
+
+// detectPlaceholderFromDriver detects placeholder style from driver name string
+func detectPlaceholderFromDriver(driver string) PlaceholderStyle {
+	driver = strings.ToLower(driver)
+	switch {
+	case strings.Contains(driver, "pgx"),
+		strings.Contains(driver, "pq"),
+		strings.Contains(driver, "postgres"):
+		return PlaceholderDollar
+	case strings.Contains(driver, "mysql"),
+		strings.Contains(driver, "sqlite"):
+		return PlaceholderQuestion
+	default:
+		return PlaceholderUnknown
 	}
 }

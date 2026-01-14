@@ -22,22 +22,34 @@ import (
 )
 
 func main() {
-	// 1. Initialize audit trail from environment variables
+	// 1. Initialize audit trail with custom error handlers
 	// Pastikan environment variables sudah di-set (lihat .env.example)
-	//
-	// Option A: Environment variables only (RECOMMENDED - tidak perlu Secret Manager)
 	ctx := context.Background()
-	if err := audittrail.InitFromEnv(ctx); err != nil {
+
+	err := audittrail.InitWithOptions(ctx, &audittrail.InitOptions{
+		// Custom handler untuk error saat consumer gagal (e.g., DB insert error)
+		OnConsumerError: func(err error) {
+			log.Printf("[AUDIT-CONSUMER-ERROR] %v", err)
+			// Tambahkan integrasi monitoring di sini:
+			// sentry.CaptureException(err)
+			// metrics.AuditConsumerErrors.Inc()
+		},
+		// Custom handler untuk error saat publish ke Pub/Sub gagal
+		OnPublishError: func(err error) {
+			log.Printf("[AUDIT-PUBLISH-ERROR] %v", err)
+			// Tambahkan integrasi monitoring di sini:
+			// sentry.CaptureException(err)
+			// metrics.AuditPublishErrors.Inc()
+		},
+		// Optional: Secret Manager provider (uncomment jika pakai)
+		// SecretProvider: provider,
+	})
+	if err != nil {
 		log.Fatalf("Failed to initialize audit trail: %v", err)
 	}
 
-	// Option B: With GCP Secret Manager fallback (OPTIONAL)
-	// provider, err := audittrail.NewGCPSecretProvider(ctx, "your-project-id")
-	// if err != nil {
-	//     log.Fatalf("Failed to create secret provider: %v", err)
-	// }
-	// defer provider.Close()
-	// if err := audittrail.InitFromEnvOrSecrets(ctx, provider); err != nil {
+	// Alternative: Simple initialization tanpa custom handlers (default: log.Printf)
+	// if err := audittrail.InitFromEnv(ctx); err != nil {
 	//     log.Fatalf("Failed to initialize audit trail: %v", err)
 	// }
 	defer func() {

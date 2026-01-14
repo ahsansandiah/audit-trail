@@ -4,7 +4,7 @@
 
 ```sql
 CREATE TABLE audit_trail (
-    log_aduit_trail_id VARCHAR(64) PRIMARY KEY,
+    log_audit_trail_id VARCHAR(64) PRIMARY KEY,
     log_req_id         VARCHAR(128),
     log_action         VARCHAR(255) NOT NULL,
     log_endpoint       TEXT,
@@ -116,7 +116,7 @@ func handleCreateOrder(c *gin.Context) {
 SELECT * FROM audit_trail ORDER BY log_created_date DESC LIMIT 5;
 ```
 
-| log_aduit_trail_id | log_req_id | log_action | log_endpoint | log_request | log_created_date | log_created_by |
+| log_audit_trail_id | log_req_id | log_action | log_endpoint | log_request | log_created_date | log_created_by |
 |--------------------|------------|------------|--------------|-------------|------------------|----------------|
 | abc123 | req-001 | CREATE_ORDER | /orders | {"product_id":"p1","qty":2} | 2025-01-05 10:30:00 | user-123 |
 | def456 | req-002 | UPDATE_ORDER | /orders/789 | {"status":"completed"} | 2025-01-05 10:35:00 | user-123 |

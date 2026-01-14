@@ -27,6 +27,18 @@ const (
 	envAuditTable         = "AUDIT_TABLE"
 )
 
+// InitOptions configures audit trail initialization with custom handlers
+type InitOptions struct {
+	// OnConsumerError is called when consumer fails to process a message (e.g., DB insert error)
+	OnConsumerError func(err error)
+
+	// OnPublishError is called when publishing to Pub/Sub fails
+	OnPublishError func(err error)
+
+	// SecretProvider for fetching config from GCP Secret Manager (optional)
+	SecretProvider SecretProvider
+}
+
 var runtime struct {
 	mu           sync.Mutex
 	initialized  bool
@@ -36,13 +48,14 @@ var runtime struct {
 	wg           sync.WaitGroup
 	db           *sql.DB
 	pubsub       *pubsub.Client
+	options      *InitOptions
 }
 
 // InitFromEnv initializes a global recorder and consumer using GCP Pub/Sub + DB.
 // Configuration is loaded from environment variables.
 // It is safe to call multiple times; only the first call will initialize.
 func InitFromEnv(ctx context.Context) error {
-	return InitFromEnvOrSecrets(ctx, nil)
+	return InitWithOptions(ctx, nil)
 }
 
 // InitFromEnvOrSecrets initializes using environment variables with optional secret provider fallback.
@@ -50,6 +63,28 @@ func InitFromEnv(ctx context.Context) error {
 // If provider is set, tries environment variables first, then falls back to secret provider.
 // It is safe to call multiple times; only the first call will initialize.
 func InitFromEnvOrSecrets(ctx context.Context, provider SecretProvider) error {
+	return InitWithOptions(ctx, &InitOptions{SecretProvider: provider})
+}
+
+// InitWithOptions initializes audit trail with custom options including error handlers.
+// Use this to capture errors for monitoring, alerting, or custom logging.
+//
+// Example:
+//
+//	audittrail.InitWithOptions(ctx, &audittrail.InitOptions{
+//	    OnConsumerError: func(err error) {
+//	        sentry.CaptureException(err)
+//	        log.Printf("audit consumer error: %v", err)
+//	    },
+//	    OnPublishError: func(err error) {
+//	        metrics.AuditPublishErrors.Inc()
+//	    },
+//	})
+func InitWithOptions(ctx context.Context, opts *InitOptions) error {
+	if opts == nil {
+		opts = &InitOptions{}
+	}
+	provider := opts.SecretProvider
 	runtime.mu.Lock()
 	if runtime.initialized {
 		runtime.mu.Unlock()
@@ -89,8 +124,9 @@ func InitFromEnvOrSecrets(ctx context.Context, provider SecretProvider) error {
 	}
 
 	audit, err := NewAuditTrail(Config{
-		DB:        db,
-		TableName: table,
+		DB:          db,
+		TableName:   table,
+		Placeholder: detectPlaceholderFromDriver(dbDriver),
 	})
 	if err != nil {
 		_ = db.Close()
@@ -110,7 +146,15 @@ func InitFromEnvOrSecrets(ctx context.Context, provider SecretProvider) error {
 		return err
 	}
 
-	consumer, err := NewConsumer(audit, NewGCPSubscriber(client.Subscription(subscriptionName)), nil)
+	// Use custom error handler if provided, otherwise use default logger
+	consumerErrorHandler := opts.OnConsumerError
+	if consumerErrorHandler == nil {
+		consumerErrorHandler = func(err error) {
+			log.Printf("audittrail consumer error: %v", err)
+		}
+	}
+
+	consumer, err := NewConsumer(audit, NewGCPSubscriber(client.Subscription(subscriptionName)), consumerErrorHandler)
 	if err != nil {
 		_ = client.Close()
 		_ = db.Close()
@@ -122,7 +166,11 @@ func InitFromEnvOrSecrets(ctx context.Context, provider SecretProvider) error {
 	go func() {
 		defer runtime.wg.Done()
 		if err := consumer.Run(runCtx); err != nil && !errors.Is(err, context.Canceled) {
-			log.Printf("audittrail consumer stopped: %v", err)
+			if opts.OnConsumerError != nil {
+				opts.OnConsumerError(err)
+			} else {
+				log.Printf("audittrail consumer stopped: %v", err)
+			}
 		}
 	}()
 
@@ -133,6 +181,7 @@ func InitFromEnvOrSecrets(ctx context.Context, provider SecretProvider) error {
 	runtime.cancel = cancel
 	runtime.db = db
 	runtime.pubsub = client
+	runtime.options = opts
 	runtime.mu.Unlock()
 
 	ok = true
@@ -143,6 +192,7 @@ func InitFromEnvOrSecrets(ctx context.Context, provider SecretProvider) error {
 func Record(ctx context.Context, entry Entry) error {
 	runtime.mu.Lock()
 	recorder := runtime.recorder
+	opts := runtime.options
 	runtime.mu.Unlock()
 	if recorder == nil {
 		return errors.New("audittrail: not initialized, call InitFromEnv first")
@@ -150,7 +200,11 @@ func Record(ctx context.Context, entry Entry) error {
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	return recorder.Record(ctx, entry)
+	err := recorder.Record(ctx, entry)
+	if err != nil && opts != nil && opts.OnPublishError != nil {
+		opts.OnPublishError(err)
+	}
+	return err
 }
 
 // Shutdown stops the consumer and closes resources initialized by InitFromEnv.

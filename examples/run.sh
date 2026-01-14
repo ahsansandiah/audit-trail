@@ -61,13 +61,23 @@ echo "  Database Driver: ${AUDIT_DB_DRIVER:-pgx}"
 echo "  Database Table: ${AUDIT_TABLE:-audit_trail}"
 echo ""
 
-# Check if service account key exists (if set)
-if [ ! -z "$GOOGLE_APPLICATION_CREDENTIALS" ]; then
+# Check GCP authentication mode
+if [ ! -z "$PUBSUB_EMULATOR_HOST" ]; then
+    # Emulator mode: no credentials needed
+    echo -e "${GREEN}✅ Auth: Pub/Sub Emulator mode${NC}"
+    echo -e "   Emulator host: $PUBSUB_EMULATOR_HOST"
+    echo -e "   (No credentials required)\n"
+elif [ ! -z "$GOOGLE_APPLICATION_CREDENTIALS" ]; then
+    # Local mode: using service account key file
     if [ ! -f "$GOOGLE_APPLICATION_CREDENTIALS" ]; then
         echo -e "${RED}❌ Service account key file not found: $GOOGLE_APPLICATION_CREDENTIALS${NC}"
         exit 1
     fi
-    echo -e "${GREEN}✅ Service account key found${NC}\n"
+    echo -e "${GREEN}✅ Auth: Service account key file${NC}\n"
+else
+    # Production mode or gcloud CLI auth
+    echo -e "${GREEN}✅ Auth: Application Default Credentials (ADC)${NC}"
+    echo -e "   (Using gcloud CLI login or GCP attached service account)\n"
 fi
 
 # Run service

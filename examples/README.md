@@ -85,7 +85,7 @@ GRANT ALL PRIVILEGES ON DATABASE audit_db TO audit_user;
 
 -- Create table (automatically created by audit trail, or manually)
 CREATE TABLE IF NOT EXISTS audit_trail (
-    log_aduit_trail_id VARCHAR(64) PRIMARY KEY,
+    log_audit_trail_id VARCHAR(64) PRIMARY KEY,
     log_req_id VARCHAR(128) NULL,
     log_action VARCHAR(255) NOT NULL,
     log_endpoint TEXT NULL,
@@ -252,7 +252,7 @@ curl http://localhost:8080/api/v1/products \
 **Audit Record:**
 ```json
 {
-  "log_aduit_trail_id": "abc123...",
+  "log_audit_trail_id": "abc123...",
   "log_req_id": "req-1234567890",
   "log_action": "GET /api/v1/products",
   "log_endpoint": "/api/v1/products",
@@ -279,7 +279,7 @@ curl -X POST http://localhost:8080/api/v1/products \
 **Audit Record:**
 ```json
 {
-  "log_aduit_trail_id": "def456...",
+  "log_audit_trail_id": "def456...",
   "log_req_id": "req-1234567891",
   "log_action": "CREATE_PRODUCT",
   "log_endpoint": "/api/v1/products",
@@ -359,7 +359,7 @@ ORDER BY log_created_date DESC;
 
 -- Logs with request body (product creation)
 SELECT
-  log_aduit_trail_id,
+  log_audit_trail_id,
   log_action,
   log_request::json->>'name' as product_name,
   log_request::json->>'price' as price,

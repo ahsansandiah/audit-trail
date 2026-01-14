@@ -58,7 +58,7 @@ func TestHTTPMiddlewareRecordsEntry(t *testing.T) {
 	}
 
 	args := calls[0].args
-	// New column order: log_aduit_trail_id, log_req_id, log_action, log_endpoint, log_request, log_response, log_created_date, log_created_by
+	// New column order: log_audit_trail_id, log_req_id, log_action, log_endpoint, log_request, log_response, log_created_date, log_created_by
 	if got := stringArg(args, 1); got != "req-123" {
 		t.Fatalf("request_id mismatch: %q", got)
 	}
