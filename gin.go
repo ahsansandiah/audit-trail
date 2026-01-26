@@ -48,16 +48,33 @@ func GinMiddleware(opts ...GinMiddlewareOption) gin.HandlerFunc {
 			}
 		}
 
-		// 4. Process request
+		// 4. Wrap ResponseWriter jika capture response body diaktifkan
+		var responseWriter *responseBodyWriter
+		if cfg.captureResponseBody {
+			responseWriter = &responseBodyWriter{
+				ResponseWriter: c.Writer,
+				body:           &bytes.Buffer{},
+				maxSize:        cfg.maxBodySize,
+			}
+			c.Writer = responseWriter
+		}
+
+		// 5. Process request
 		c.Next()
 
-		// 5. Get custom action name (optional)
+		// 6. Get custom action name (optional)
 		action := ""
 		if a, exists := c.Get("audit_action"); exists {
 			action = a.(string)
 		}
 
-		// 6. Build entry using framework-agnostic helper
+		// 7. Capture response body jika diaktifkan
+		var responseBody any
+		if cfg.captureResponseBody && responseWriter != nil {
+			responseBody = parseResponseBody(responseWriter.body.Bytes())
+		}
+
+		// 8. Build entry using framework-agnostic helper
 		entry := BuildEntry(
 			HTTPRequest{
 				Method: c.Request.Method,
@@ -66,6 +83,7 @@ func GinMiddleware(opts ...GinMiddlewareOption) gin.HandlerFunc {
 			},
 			HTTPResponse{
 				StatusCode: c.Writer.Status(),
+				Body:       responseBody,
 			},
 			RequestContext{
 				UserID:      userID,
@@ -75,7 +93,7 @@ func GinMiddleware(opts ...GinMiddlewareOption) gin.HandlerFunc {
 			},
 		)
 
-		// 7. Record async (non-blocking)
+		// 9. Record async (non-blocking)
 		go func() {
 			if err := Record(c.Request.Context(), entry); err != nil {
 				if cfg.onError != nil {
@@ -109,18 +127,20 @@ func AutoGinMiddleware(opts ...GinMiddlewareOption) gin.HandlerFunc {
 type GinMiddlewareOption func(*ginMiddlewareConfig)
 
 type ginMiddlewareConfig struct {
-	captureRequestBody bool
-	maxBodySize        int64
-	extractUser        func(*gin.Context) string
-	serviceName        string
-	shouldSkip         func(*gin.Context) bool
-	onError            func(error)
+	captureRequestBody  bool
+	captureResponseBody bool
+	maxBodySize         int64
+	extractUser         func(*gin.Context) string
+	serviceName         string
+	shouldSkip          func(*gin.Context) bool
+	onError             func(error)
 }
 
 func defaultGinConfig() ginMiddlewareConfig {
 	return ginMiddlewareConfig{
-		captureRequestBody: true,
-		maxBodySize:        1024 * 1024, // 1MB
+		captureRequestBody:  true,
+		captureResponseBody: false, // Default false untuk backward compatibility
+		maxBodySize:         1024 * 1024, // 1MB
 		extractUser: func(c *gin.Context) string {
 			// Priority 1: dari context (set oleh auth middleware)
 			if userID, exists := c.Get("user_id"); exists {
@@ -146,6 +166,13 @@ func defaultGinConfig() ginMiddlewareConfig {
 func WithCaptureRequestBody(capture bool) GinMiddlewareOption {
 	return func(c *ginMiddlewareConfig) {
 		c.captureRequestBody = capture
+	}
+}
+
+// WithCaptureResponseBody enables/disables response body capture
+func WithCaptureResponseBody(capture bool) GinMiddlewareOption {
+	return func(c *ginMiddlewareConfig) {
+		c.captureResponseBody = capture
 	}
 }
 
@@ -227,6 +254,47 @@ func captureRequestPayload(c *gin.Context, maxSize int64) any {
 	if err := json.Unmarshal(bodyBytes, &payload); err != nil {
 		// If not JSON, return as string
 		return string(bodyBytes)
+	}
+
+	return payload
+}
+
+// responseBodyWriter wraps gin.ResponseWriter to capture response body
+type responseBodyWriter struct {
+	gin.ResponseWriter
+	body    *bytes.Buffer
+	maxSize int64
+	written int64
+}
+
+// Write captures the response body while writing to the original writer
+func (w *responseBodyWriter) Write(b []byte) (int, error) {
+	// Capture body up to maxSize
+	if w.written < w.maxSize {
+		remaining := w.maxSize - w.written
+		toWrite := int64(len(b))
+		if toWrite > remaining {
+			toWrite = remaining
+		}
+		w.body.Write(b[:toWrite])
+		w.written += toWrite
+	}
+
+	// Always write to the original writer
+	return w.ResponseWriter.Write(b)
+}
+
+// parseResponseBody attempts to parse response bytes as JSON, falls back to string
+func parseResponseBody(data []byte) any {
+	if len(data) == 0 {
+		return nil
+	}
+
+	// Try parse as JSON
+	var payload any
+	if err := json.Unmarshal(data, &payload); err != nil {
+		// If not JSON, return as string
+		return string(data)
 	}
 
 	return payload
