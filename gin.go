@@ -37,7 +37,7 @@ func GinMiddleware(opts ...GinMiddlewareOption) gin.HandlerFunc {
 			requestBody = captureRequestPayload(c, cfg.maxBodySize)
 		}
 
-		// 2. Extract user ID dari context (set oleh auth middleware)
+		// 2. Extract user ID from context (set by auth middleware)
 		userID := cfg.extractUser(c)
 
 		// 3. Extract user login activity ID
@@ -51,7 +51,7 @@ func GinMiddleware(opts ...GinMiddlewareOption) gin.HandlerFunc {
 			}
 		}
 
-		// 5. Wrap ResponseWriter jika capture response body diaktifkan
+		// 5. Wrap ResponseWriter if response body capture is enabled
 		var responseWriter *responseBodyWriter
 		if cfg.captureResponseBody {
 			responseWriter = &responseBodyWriter{
@@ -71,7 +71,7 @@ func GinMiddleware(opts ...GinMiddlewareOption) gin.HandlerFunc {
 			action = a.(string)
 		}
 
-		// 8. Capture response body jika diaktifkan
+		// 8. Capture response body if enabled
 		var responseBody any
 		if cfg.captureResponseBody && responseWriter != nil {
 			responseBody = parseResponseBody(responseWriter.body.Bytes())
@@ -144,26 +144,26 @@ type ginMiddlewareConfig struct {
 func defaultGinConfig() ginMiddlewareConfig {
 	return ginMiddlewareConfig{
 		captureRequestBody:  true,
-		captureResponseBody: false, // Default false untuk backward compatibility
+		captureResponseBody: false, // Default false for backward compatibility
 		maxBodySize:         1024 * 1024, // 1MB
 		extractUser: func(c *gin.Context) string {
-			// Priority 1: dari context (set oleh auth middleware)
+			// Priority 1: from context (set by auth middleware)
 			if userID, exists := c.Get("user_id"); exists {
 				if id, ok := userID.(string); ok {
 					return id
 				}
 			}
-			// Priority 2: dari header
+			// Priority 2: from header
 			return c.GetHeader("X-User-Id")
 		},
 		extractLoginActivityID: func(c *gin.Context) string {
-			// Priority 1: dari context (set oleh auth middleware)
+			// Priority 1: from context (set by auth middleware)
 			if activityID, exists := c.Get("user_login_activity_id"); exists {
 				if id, ok := activityID.(string); ok {
 					return id
 				}
 			}
-			// Priority 2: dari header
+			// Priority 2: from header
 			return c.GetHeader("X-User-Login-Activity-Id")
 		},
 		serviceName: "unknown",

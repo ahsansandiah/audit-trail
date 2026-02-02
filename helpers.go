@@ -21,7 +21,7 @@ type HTTPResponse struct {
 
 // RequestContext holds context data for audit entry
 type RequestContext struct {
-	UserID              string // User ID yang melakukan request (untuk CreatedBy)
+	UserID              string // User ID who made the request (for CreatedBy field)
 	RequestID           string // Request ID
 	UserLoginActivityID string // User login activity ID for session tracking
 	Action              string // Custom action name (optional)
