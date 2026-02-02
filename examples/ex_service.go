@@ -68,10 +68,11 @@ func main() {
 	// 3. Setup audit middleware (BEFORE routes)
 	// Middleware ini akan capture semua request/response kecuali yang di-skip
 	r.Use(audittrail.GinMiddleware(
-		audittrail.WithServiceName("product-service"), // Nama service Anda
+		audittrail.WithServiceName("product-service"),                    // Nama service Anda
 		audittrail.WithSkipPaths("/health", "/metrics", "/api/v1/login"), // Skip paths yang tidak perlu di-audit
-		audittrail.WithCaptureRequestBody(true),       // Capture request body untuk POST/PUT/PATCH
-		audittrail.WithMaxBodySize(2*1024*1024),       // Max 2MB body size
+		audittrail.WithCaptureRequestBody(true),                          // Capture request body untuk POST/PUT/PATCH
+		audittrail.WithCaptureResponseBody(true),                         // Capture response body untuk audit
+		audittrail.WithMaxBodySize(2*1024*1024),                          // Max 2MB body size (untuk request & response)
 		audittrail.WithGinErrorHandler(func(err error) {
 			// Custom error handler jika audit trail gagal
 			log.Printf("[AUDIT-ERROR] %v", err)
@@ -81,10 +82,11 @@ func main() {
 	// 4. Public routes (tidak perlu auth)
 	r.GET("/health", handleHealth)
 	r.POST("/api/v1/login", handleLogin)
+	r.POST("/api/v1/logout", handleLogout)
 
 	// 5. Protected routes (perlu auth)
 	authorized := r.Group("/api/v1")
-	authorized.Use(authMiddleware()) // Set user_id ke context
+	authorized.Use(authMiddleware()) // Set user_id dan user_login_activity_id ke context
 	{
 		// Product endpoints
 		authorized.GET("/products", handleListProducts)
@@ -133,8 +135,8 @@ func main() {
 
 // ==================== Middleware ====================
 
-// authMiddleware validates token and sets user_id to context
-// Audit middleware akan otomatis capture user_id ini
+// authMiddleware validates token and sets user_id and user_login_activity_id to context
+// Audit middleware akan otomatis capture user_id dan user_login_activity_id ini
 func authMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		token := c.GetHeader("Authorization")
@@ -163,6 +165,16 @@ func authMiddleware() gin.HandlerFunc {
 		// Set user_id ke context - INI PENTING!
 		// Audit middleware akan ambil user_id dari sini untuk field log_created_by
 		c.Set("user_id", userID)
+
+		// Extract user_login_activity_id dari token atau session
+		// Di production, bisa didapat dari JWT claims atau session store
+		// Contoh: claims.LoginActivityID atau redis.Get("session:"+token)
+		loginActivityID := c.GetHeader("X-User-Login-Activity-Id")
+		if loginActivityID != "" {
+			// Set user_login_activity_id ke context
+			// Audit middleware akan ambil ini untuk field user_login_activity_id
+			c.Set("user_login_activity_id", loginActivityID)
+		}
 
 		// Optional: set request_id jika belum ada
 		if c.GetHeader("X-Request-Id") == "" {
@@ -195,13 +207,57 @@ func handleLogin(c *gin.Context) {
 		return
 	}
 
-	// Simulate login logic
+	// Simulate login validation (ganti dengan validasi sebenarnya di production)
+	userID := "user-12345"
+
+	// Record user login activity
+	// Ini akan menyimpan informasi login dan mengembalikan activity ID
+	loginActivityID, err := audittrail.RecordLogin(c.Request.Context(), audittrail.UserLoginActivity{
+		UserID:       userID,
+		IPAddress:    c.ClientIP(),
+		UserAgent:    c.GetHeader("User-Agent"),
+		DeviceInfo:   c.GetHeader("X-Device-Info"), // Optional: kirim dari client
+		Location:     "",                            // Optional: bisa di-resolve dari IP
+		SessionToken: "valid-token-123",             // Simpan token untuk lookup nanti
+	})
+	if err != nil {
+		log.Printf("[LOGIN-ACTIVITY-ERROR] %v", err)
+		// Lanjutkan login meskipun gagal record activity
+	}
+
 	c.JSON(200, gin.H{
 		"token": "Bearer valid-token-123",
 		"user": gin.H{
-			"id":       "user-12345",
+			"id":       userID,
 			"username": req.Username,
 		},
+		// Kembalikan login_activity_id agar client bisa kirim di header berikutnya
+		// Client harus mengirim header "X-User-Login-Activity-Id" di setiap request
+		"login_activity_id": loginActivityID,
+	})
+}
+
+func handleLogout(c *gin.Context) {
+	// Get login activity ID dari header atau request body
+	loginActivityID := c.GetHeader("X-User-Login-Activity-Id")
+	if loginActivityID == "" {
+		var req struct {
+			LoginActivityID string `json:"login_activity_id"`
+		}
+		if err := c.ShouldBindJSON(&req); err == nil {
+			loginActivityID = req.LoginActivityID
+		}
+	}
+
+	if loginActivityID != "" {
+		// Record logout time
+		if err := audittrail.RecordLogout(c.Request.Context(), loginActivityID); err != nil {
+			log.Printf("[LOGOUT-ACTIVITY-ERROR] %v", err)
+		}
+	}
+
+	c.JSON(200, gin.H{
+		"message": "logged out successfully",
 	})
 }
 
@@ -266,7 +322,7 @@ func handleCreateProduct(c *gin.Context) {
 	// - log_action: "CREATE_PRODUCT" (custom)
 	// - log_endpoint: "/api/v1/products"
 	// - log_request: {"name":"Product A","price":100,"stock":50}
-	// - log_response: null (default, bisa di-custom)
+	// - log_response: {"id":"prod-123","name":"Product A","price":100,"stock":50} (auto-captured)
 }
 
 func handleUpdateProduct(c *gin.Context) {

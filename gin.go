@@ -40,7 +40,10 @@ func GinMiddleware(opts ...GinMiddlewareOption) gin.HandlerFunc {
 		// 2. Extract user ID dari context (set oleh auth middleware)
 		userID := cfg.extractUser(c)
 
-		// 3. Extract request ID
+		// 3. Extract user login activity ID
+		loginActivityID := cfg.extractLoginActivityID(c)
+
+		// 4. Extract request ID
 		requestID := c.GetHeader("X-Request-Id")
 		if requestID == "" {
 			if rid, exists := c.Get("request_id"); exists {
@@ -48,7 +51,7 @@ func GinMiddleware(opts ...GinMiddlewareOption) gin.HandlerFunc {
 			}
 		}
 
-		// 4. Wrap ResponseWriter jika capture response body diaktifkan
+		// 5. Wrap ResponseWriter jika capture response body diaktifkan
 		var responseWriter *responseBodyWriter
 		if cfg.captureResponseBody {
 			responseWriter = &responseBodyWriter{
@@ -59,22 +62,22 @@ func GinMiddleware(opts ...GinMiddlewareOption) gin.HandlerFunc {
 			c.Writer = responseWriter
 		}
 
-		// 5. Process request
+		// 6. Process request
 		c.Next()
 
-		// 6. Get custom action name (optional)
+		// 7. Get custom action name (optional)
 		action := ""
 		if a, exists := c.Get("audit_action"); exists {
 			action = a.(string)
 		}
 
-		// 7. Capture response body jika diaktifkan
+		// 8. Capture response body jika diaktifkan
 		var responseBody any
 		if cfg.captureResponseBody && responseWriter != nil {
 			responseBody = parseResponseBody(responseWriter.body.Bytes())
 		}
 
-		// 8. Build entry using framework-agnostic helper
+		// 9. Build entry using framework-agnostic helper
 		entry := BuildEntry(
 			HTTPRequest{
 				Method: c.Request.Method,
@@ -86,14 +89,15 @@ func GinMiddleware(opts ...GinMiddlewareOption) gin.HandlerFunc {
 				Body:       responseBody,
 			},
 			RequestContext{
-				UserID:      userID,
-				RequestID:   requestID,
-				Action:      action,
-				ServiceName: cfg.serviceName,
+				UserID:              userID,
+				RequestID:           requestID,
+				UserLoginActivityID: loginActivityID,
+				Action:              action,
+				ServiceName:         cfg.serviceName,
 			},
 		)
 
-		// 9. Record async (non-blocking)
+		// 10. Record async (non-blocking)
 		go func() {
 			if err := Record(c.Request.Context(), entry); err != nil {
 				if cfg.onError != nil {
@@ -127,13 +131,14 @@ func AutoGinMiddleware(opts ...GinMiddlewareOption) gin.HandlerFunc {
 type GinMiddlewareOption func(*ginMiddlewareConfig)
 
 type ginMiddlewareConfig struct {
-	captureRequestBody  bool
-	captureResponseBody bool
-	maxBodySize         int64
-	extractUser         func(*gin.Context) string
-	serviceName         string
-	shouldSkip          func(*gin.Context) bool
-	onError             func(error)
+	captureRequestBody     bool
+	captureResponseBody    bool
+	maxBodySize            int64
+	extractUser            func(*gin.Context) string
+	extractLoginActivityID func(*gin.Context) string
+	serviceName            string
+	shouldSkip             func(*gin.Context) bool
+	onError                func(error)
 }
 
 func defaultGinConfig() ginMiddlewareConfig {
@@ -150,6 +155,16 @@ func defaultGinConfig() ginMiddlewareConfig {
 			}
 			// Priority 2: dari header
 			return c.GetHeader("X-User-Id")
+		},
+		extractLoginActivityID: func(c *gin.Context) string {
+			// Priority 1: dari context (set oleh auth middleware)
+			if activityID, exists := c.Get("user_login_activity_id"); exists {
+				if id, ok := activityID.(string); ok {
+					return id
+				}
+			}
+			// Priority 2: dari header
+			return c.GetHeader("X-User-Login-Activity-Id")
 		},
 		serviceName: "unknown",
 		shouldSkip: func(c *gin.Context) bool {
@@ -188,6 +203,15 @@ func WithUserExtractor(fn func(*gin.Context) string) GinMiddlewareOption {
 	return func(c *ginMiddlewareConfig) {
 		if fn != nil {
 			c.extractUser = fn
+		}
+	}
+}
+
+// WithLoginActivityExtractor sets custom login activity ID extraction logic
+func WithLoginActivityExtractor(fn func(*gin.Context) string) GinMiddlewareOption {
+	return func(c *ginMiddlewareConfig) {
+		if fn != nil {
+			c.extractLoginActivityID = fn
 		}
 	}
 }

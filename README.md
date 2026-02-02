@@ -51,13 +51,22 @@ func main() {
 }
 ```
 
-Default env values (override in your service):
-- `AUDIT_GCP_PROJECT`: `local-project`
-- `AUDIT_PUBSUB_TOPIC`: `audit-trail`
-- `AUDIT_PUBSUB_SUBSCRIPTION`: `audit-trail-sub`
-- `AUDIT_DB_DRIVER`: `pgx`
-- `AUDIT_DB_DSN`: `postgres://user:pass@localhost:5432/audittrail?sslmode=disable`
-- `AUDIT_TABLE`: `audit_trail`
+### Environment Variables
+Required environment variables for database connection:
+- `DATABASE_USER`: Database username (default: `postgres`)
+- `DATABASE_PASSWORD`: Database password (default: `postgres`)
+- `DATABASE_HOST`: Database host (default: `localhost`)
+- `DATABASE_PORT`: Database port (default: `5432`)
+- `DATABASE_NAME`: Database name (default: `audittrail`)
+- `AUDIT_GCP_PROJECT`: GCP Project ID (default: `local-project`)
+
+### Hardcoded Values
+The following values are hardcoded in the library:
+- Database Driver: `pgx` (PostgreSQL)
+- Audit Trail Table: `log_audit_trail`
+- User Login Activity Table: `log_user_login_activity`
+- Pub/Sub Topic: `audit-trail`
+- Pub/Sub Subscription: `audit-trail-sub`
 
 Note:
 - your service must import the DB driver (e.g., `pgx`) so `database/sql` can open the connection.
@@ -99,6 +108,59 @@ consumer, _ := audittrail.NewConsumer(audit, subscriber, nil)
 if err := consumer.Run(context.Background()); err != nil {
     log.Printf("consumer stopped: %v", err)
 }
+```
+
+### User Login Activity Tracking
+Track user login sessions and link audit trail entries to specific login activities:
+
+```go
+// Record login when user authenticates
+loginActivityID, err := audittrail.RecordLogin(ctx, audittrail.UserLoginActivity{
+    UserID:       "user-123",
+    IPAddress:    "192.168.1.1",
+    UserAgent:    "Mozilla/5.0...",
+    DeviceInfo:   "Chrome on Windows",
+    Location:     "Jakarta, Indonesia",
+    SessionToken: "session-token-abc",
+})
+
+// The loginActivityID can be:
+// 1. Stored in JWT claims
+// 2. Stored in session/redis
+// 3. Returned to client to send in X-User-Login-Activity-Id header
+
+// Record logout when user logs out
+err = audittrail.RecordLogout(ctx, loginActivityID)
+
+// Get login activity by ID
+activity, err := audittrail.GetLoginActivity(ctx, loginActivityID)
+
+// Get login activity by session token
+activity, err := audittrail.GetLoginActivityByToken(ctx, "session-token-abc")
+```
+
+The `user_login_activity_id` field in audit trail entries allows you to:
+- Track all actions performed during a specific login session
+- Identify which device/location was used for each action
+- Detect anomalies by correlating actions with login metadata
+
+#### Gin Middleware Integration
+The Gin middleware automatically extracts `user_login_activity_id` from context or header:
+
+```go
+// In your auth middleware, set the login activity ID
+c.Set("user_login_activity_id", loginActivityID)
+
+// Or clients can send it via header
+// X-User-Login-Activity-Id: <activity-id>
+
+// Custom extractor (optional)
+audittrail.GinMiddleware(
+    audittrail.WithLoginActivityExtractor(func(c *gin.Context) string {
+        // Custom logic to extract login activity ID
+        return c.GetHeader("X-Session-Id")
+    }),
+)
 ```
 
 ### Configuration

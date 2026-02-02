@@ -37,14 +37,15 @@ type RecorderFunc func(context.Context, Entry) error
 func (f RecorderFunc) Record(ctx context.Context, entry Entry) error { return f(ctx, entry) }
 
 type Entry struct {
-	ID          string    `json:"log_audit_trail_id"`
-	RequestID   string    `json:"log_req_id,omitempty"`
-	Action      string    `json:"log_action"`
-	Endpoint    string    `json:"log_endpoint,omitempty"`
-	Request     any       `json:"log_request,omitempty"`
-	Response    any       `json:"log_response,omitempty"`
-	CreatedDate time.Time `json:"log_created_date"`
-	CreatedBy   string    `json:"log_created_by,omitempty"`
+	ID                  string    `json:"log_audit_trail_id"`
+	RequestID           string    `json:"log_req_id,omitempty"`
+	UserLoginActivityID string    `json:"user_login_activity_id,omitempty"`
+	Action              string    `json:"log_action"`
+	Endpoint            string    `json:"log_endpoint,omitempty"`
+	Request             any       `json:"log_request,omitempty"`
+	Response            any       `json:"log_response,omitempty"`
+	CreatedDate         time.Time `json:"log_created_date"`
+	CreatedBy           string    `json:"log_created_by,omitempty"`
 }
 
 type AuditTrail struct {
@@ -106,9 +107,9 @@ func (r *AuditTrail) Record(ctx context.Context, entry Entry) error {
 		return fmt.Errorf("audittrail: marshal response failed: %w", err)
 	}
 
-	placeholders := r.buildPlaceholders(8)
+	placeholders := r.buildPlaceholders(9)
 	query := fmt.Sprintf(
-		"INSERT INTO %s (log_audit_trail_id, log_req_id, log_action, log_endpoint, log_request, log_response, log_created_date, log_created_by) VALUES (%s)",
+		"INSERT INTO %s (log_audit_trail_id, log_req_id, user_login_activity_id, log_action, log_endpoint, log_request, log_response, log_created_date, log_created_by) VALUES (%s)",
 		r.table,
 		placeholders,
 	)
@@ -118,6 +119,7 @@ func (r *AuditTrail) Record(ctx context.Context, entry Entry) error {
 		query,
 		normalized.ID,
 		nullString(normalized.RequestID),
+		nullString(normalized.UserLoginActivityID),
 		normalized.Action,
 		nullString(normalized.Endpoint),
 		requestValue,
@@ -137,6 +139,7 @@ func (r *AuditTrail) EnsureTable(ctx context.Context) error {
 		CREATE TABLE IF NOT EXISTS %s (
 			log_audit_trail_id VARCHAR(64) PRIMARY KEY,
 			log_req_id VARCHAR(128) NULL,
+			user_login_activity_id VARCHAR(64) NULL,
 			log_action VARCHAR(255) NOT NULL,
 			log_endpoint TEXT NULL,
 			log_request JSON NULL,
@@ -146,7 +149,18 @@ func (r *AuditTrail) EnsureTable(ctx context.Context) error {
 		);`, r.table)
 
 	_, err := r.db.ExecContext(ctx, query)
-	return err
+	if err != nil {
+		return err
+	}
+
+	// Create index on user_login_activity_id for faster lookups
+	indexQuery := fmt.Sprintf(
+		"CREATE INDEX IF NOT EXISTS idx_%s_user_login_activity_id ON %s (user_login_activity_id);",
+		r.table, r.table,
+	)
+	_, _ = r.db.ExecContext(ctx, indexQuery)
+
+	return nil
 }
 
 func (r *AuditTrail) buildPlaceholders(n int) string {

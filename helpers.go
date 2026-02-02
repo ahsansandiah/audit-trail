@@ -21,10 +21,11 @@ type HTTPResponse struct {
 
 // RequestContext holds context data for audit entry
 type RequestContext struct {
-	UserID      string // User ID yang melakukan request (untuk CreatedBy)
-	RequestID   string // Request ID
-	Action      string // Custom action name (optional)
-	ServiceName string // Service name
+	UserID              string // User ID yang melakukan request (untuk CreatedBy)
+	RequestID           string // Request ID
+	UserLoginActivityID string // User login activity ID for session tracking
+	Action              string // Custom action name (optional)
+	ServiceName         string // Service name
 }
 
 // BuildEntry creates audit entry from HTTP context (framework agnostic)
@@ -36,13 +37,14 @@ func BuildEntry(req HTTPRequest, resp HTTPResponse, ctx RequestContext) Entry {
 	}
 
 	return Entry{
-		RequestID:   ctx.RequestID,
-		Action:      action,
-		Endpoint:    req.Path,
-		Request:     req.Body,
-		Response:    resp.Body,
-		CreatedDate: time.Now().UTC(),
-		CreatedBy:   ctx.UserID,
+		RequestID:           ctx.RequestID,
+		UserLoginActivityID: ctx.UserLoginActivityID,
+		Action:              action,
+		Endpoint:            req.Path,
+		Request:             req.Body,
+		Response:            resp.Body,
+		CreatedDate:         time.Now().UTC(),
+		CreatedBy:           ctx.UserID,
 	}
 }
 
